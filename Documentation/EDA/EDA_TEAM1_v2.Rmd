@@ -1,0 +1,292 @@
+---
+title: "EDA_team1"
+author: "Bryton Levalley, Deac Long, Emma Johnson, Jessican Hosler, Minju Lee"
+date: "3/25/2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Team1 EDA
+
+Our team will be looking at fictitious customer data provided by our mentor from SEL company. Missing data and outliers are dealt with in excel.
+Steps:
+1. Import data using CSV
+2. change customer keys in each table to match all across the tables.
+3. Join necessary tables
+
+```{r workingdirectory, echo=FALSE, results='hide'}
+#setwd("\cloud\project")
+#getwd()
+```
+
+```{r read_tables}
+library(ggplot2)
+library(dplyr)
+
+customer_info = read.csv("C:/Users/Minju/Desktop/CPTS424/team_1/Data/customerInfo.csv")
+customer_info <- customer_info[-c(1)]
+
+table_a = read.csv("C:/Users/Minju/Desktop/CPTS424/team_1/Data/tableA.csv")
+table_a <- table_a[-c(1:2)]
+
+table_b = read.csv("C:/Users/Minju/Desktop/CPTS424/team_1/Data/tableB.csv")
+table_b <- table_b[-c(1:2)]
+
+table_d = read.csv("C:/Users/Minju/Desktop/CPTS424/team_1/Data/tableD.csv")
+table_d <- table_d[-c(1:2)]
+
+table_e = read.csv("C:/Users/Minju/Desktop/CPTS424/team_1/Data/tableE.csv")
+table_e <- table_e[-c(1:2)]
+
+colnames(table_a)[colnames(table_a) == "CustomerLocation"] = "Customer.ID" 
+colnames(table_b)[colnames(table_b) == "Customer.Key"] = "Customer.ID" 
+colnames(table_d)[colnames(table_d) == "Customer"] = "Customer.ID"
+colnames(table_e)[colnames(table_e) == "Company"] = "Customer.ID" 
+```
+
+Summaries of each table. We can see that there are some missing data in table_d and table_e. We will omit those, since the amount of NA values are insignificant. We also see the table_d contains 6 tuples with year 1916, this we will also exclude these values for analysis purpose.
+
+```{r, results="hide"}
+summary(customer_info)
+summary(table_a)
+summary(table_b)
+summary(table_d)
+summary(table_e)
+# do some extra cleaning
+year_1916 <-filter(table_d, Year == 1916)
+year_1916
+table_d2 <- table_d[!(table_d$Year == 1916),] %>% na.omit(table_d)
+summary(table_d)
+table_e2 <- na.omit(table_e)
+
+```
+
+Created new joined tables for analysis purpose.
+```{r join_tables, results="hide"}
+Customer_order <- rbind(table_a,table_d2)
+Customer_order2 <- right_join(customer_info,Customer_order, by='Customer.ID')
+Customer_order2
+Customer_typeA <- filter(Customer_order2, Type== 0)
+Customer_typeB <- filter(Customer_order2, Type== 1)
+Customer_typeC <- right_join(customer_info, table_b, by='Customer.ID')
+Open_Closed <- right_join(customer_info,table_e2, by='Customer.ID')
+
+Customer_typeA
+write.csv(Customer_typeA,"C:/Users/Minju/Desktop/CPTS424/team_1/Data/typeA.csv", row.names = FALSE)
+
+Customer_typeB
+write.csv(Customer_typeB,"C:/Users/Minju/Desktop/CPTS424/team_1/Data/typeB.csv", row.names = FALSE)
+
+Customer_typeC
+write.csv(Customer_typeC,"C:/Users/Minju/Desktop/CPTS424/team_1/Data/typeC.csv", row.names = FALSE)
+
+Open_Closed
+write.csv(Open_Closed,"C:/Users/Minju/Desktop/CPTS424/team_1/Data/open_closed.csv", row.names = FALSE)
+```
+
+# Data Overview & Visualization
+
+### 1. Customer_info
+The histogram shows frequency and density of customer size bin in Customer_Info table.
+there are customer size 0,1,2 and 3. Most customers belong to customer size 1 and the least amount of customers belong to customer size 3.
+
+```{r customer_info_plots}
+par(mfrow = c(1, 2))
+h =hist(customer_info$Customer.Size, main="Customer Size Bin Frequency", xlab = "Customer Size Bin", ylim=c(0,70000), seq(-0.5,3.5, 1))
+text(h$mids,h$counts,labels=h$counts, adj=c(.5,-.5))
+
+h_prob =hist(customer_info$Customer.Size, main="Customer Size Bin Frequency", xlab = "Customer Size Bin", prob=TRUE, seq(-0.5,3.5, 1))
+```
+
+### 2. Frequench of Yearly Data by each Type
+
+The given data starts mid 2014 and ends mid 2017.
+
+```{r yearly}
+a = Customer_typeA %>%
+  group_by(Year) %>%
+  summarise(percent= 100* n() / nrow(Customer_typeA))
+barplot(a$percent,names.arg = c(2014,2015,2016,2017), xlab = "Year", ylab = "Percent of Data Type A", main="Percent of Data in Each Year TypeA")
+
+b = Customer_typeB %>%
+  group_by(Year) %>%
+  summarise(percent= 100* n() / nrow(Customer_typeB))
+barplot(b$percent,names.arg = c(2014,2015,2016,2017), xlab = "Year", ylab = "Percent of Data Type B", main="Percent of Data in Each Year TypeB")
+
+c = Customer_typeC %>%
+  group_by(Year) %>%
+  summarise(percent= 100* n() / nrow(Customer_typeC))
+barplot(c$percent,names.arg = c(2014,2015,2016,2017), xlab = "Year", ylab = "Percent of Data Type C", main="Percent of Data in Each Year TypeC")
+
+```
+
+Type A data contains most data in 2015 and 2016.
+Type B data contains most data in 2014 and 2016.
+Type C data contains most data in 2015 and 2016.
+
+question: Type B does not have similar trend with Type A and Type C. What can be the reason for this? We also know that we only contain half year of data in 2014, however Type B contains most data in 2014.
+
+### 3. Frequench of Monthly Data by each Type.
+
+```{r Type_A_monthly}
+# Overall Type A percent by monthly
+a2 = Customer_typeA %>%
+  group_by(Year) %>%
+  group_by(Month) %>%
+  summarise(percent= 100* n() / nrow(Customer_typeA))
+barplot(a2$percent,names.arg = c(1,2,3,4,5,6,7,8,9,10,11,12),xlab = "Month", ylab = "Percent of Data", main="Percent of Data in Each Month")
+
+# Type A monthly facet wrop by year
+a3 <- ggplot(Customer_typeA, aes(x=Month, y=nrow(Customer_typeA))) + geom_bar(stat='identity', fill = "forest green" ) + ylab("count")
+
+a3 <- a3+ facet_wrap(~Year, ncol =2 ) + scale_x_continuous(breaks = seq(0,12,1))
+a3
+
+```
+
+First Bar plot shows percent of Overall Monthly Type A data. Month 9 has the most TypeA data follwed by month3 and month 11
+
+The Second bar plots show monthly typeA data by each year. As I menthiod earlier we can see that 2016 only contains data from May to December and 2017 contains data from January to Jun.
+
+```{r Type_B_monthly}
+# Overall Type B percent by monthly
+b2 = Customer_typeB %>%
+  group_by(Year) %>%
+  group_by(Month) %>%
+  summarise(percent= 100* n() / nrow(Customer_typeA))
+barplot(b2$percent,names.arg = c(1,2,3,4,5,6,7,8,9,10,11,12),xlab = "Month", ylab = "Percent of Data", main="Percent of Data in Each Month")
+
+# Type A monthly facet wrop by year
+b3 <- ggplot(Customer_typeB, aes(x=Month, y=nrow(Customer_typeB))) + geom_bar(stat='identity', fill = "forest green" ) + ylab("count")
+
+b3 <- b3+ facet_wrap(~Year, ncol =2 ) + scale_x_continuous(breaks = seq(0,12,1))
+b3
+```
+
+First Bar plot shows percent of Overall Monthly Type B data. Month 9 has the most Type B data follwed by month8 and month 6. Some interestng fouding on Type B is that there are very small amount of TypeB data in month 1,3,4,5,7,and 10
+
+The Second bar plot shows monthly typeB data by each year. 
+
+```{r Type_C_monthly}
+# Overall Type B percent by monthly
+c2 = Customer_typeC %>%
+  group_by(Year) %>%
+  group_by(Month) %>%
+  summarise(percent= 100* n() / nrow(Customer_typeC))
+barplot(c2$percent,names.arg = c(1,2,3,4,5,6,7,8,9,10,11,12),xlab = "Month", ylab = "Percent of Data", main="Percent of Data in Each Month")
+
+# Type A monthly facet wrop by year
+c3 <- ggplot(Customer_typeC, aes(x=Month, y=nrow(Customer_typeC))) +        geom_bar(stat='identity', fill = "forest green" ) + ylab("count") +
+facet_wrap(~Year, ncol =2) +
+scale_x_continuous(breaks = seq(0,12,1))
+
+c3
+```
+
+First Bar plot shows percent of Overall Monthly Type C data. Type C data is evenly distributed through out the months.
+
+The Second bar plot shows monthly typeB data by each year. The data is evenly distributed monthly in each year.
+
+### 4. Open_closed table
+
+* Overall Trend 
+
+```{r overall}
+Open_Closed$Customer.Size = as.factor(Open_Closed$Customer.Size)
+Open_Closed$Open = as.Date.factor(Open_Closed$Open)
+Open_Closed$Closed = as.Date.factor(Open_Closed$Closed)
+
+ggplot(Open_Closed, aes(x = Open, y = Closed, shape = Customer.Size, color = Customer.Size)) + geom_point() + geom_smooth(method='lm')
+
+```
+
+The plot above shows that most of the data are concentrated along the line where Open and Closed date is not too apart from each other. However, we have data where closed date is far apart from the open date. 
+
+The best fit lines for each Customer.size on its open and closed data is displayed. Customer.Size 0 stands out from the rest. It indicates that around mid 2014 to late 2015 data that belongs to Customer.Size 0 were taking longer to close on average compared to any other Customer.Size and from late 2015 to mid 2017 Customer.Size 0 were closed early on average compared to Others.
+
+* Yearly Trends
+
+```{r}
+# overall
+par(mfrow = c(1, 2))
+hist(Open_Closed$Open_Year, xlab="Year", main = "Frequency of Years in Open Data")
+hist(Open_Closed$Closed_Year, xlab="Year", main = "Frequency of Years in Closed Data")
+
+#open by binsize
+open <- ggplot(Open_Closed, aes(x=Open_Year, y=nrow(Open_Closed))) +        geom_bar(stat='identity', fill = "forest green" ) + ylab("open_count") +
+facet_wrap(~Customer.Size, ncol =2)
+open
+
+#closed by binsize
+closed <- ggplot(Open_Closed, aes(x=Closed_Year, y=nrow(Open_Closed))) +        geom_bar(stat='identity', fill = "forest green" ) + ylab("closed_count") +
+facet_wrap(~Customer.Size, ncol =2)
+closed
+
+
+```
+
+First bar graphs show overall open data and closed data by year. When we look at the closed data, it is increasing over time. This can indicate that the company is closing more open data as time goes. 
+
+Second bar graphs show open data counts by year on each Customer.Size.
+
+Third bar graphs show closed data counts by year on each Customer.Size.
+
+We can also see that Customer.Size 3 contains a lot more data compared to other Customer.Sizes. However, Customer.Size 3 contains the least amount of Customers compared to others. This can indicate that Customer.Size 3 contains most frequent customers
+
+Possible conclusion on Customer.Size attribute is that it is orderd from least frequent customers to most frequent customers (0 being the least frequent and 3 being the most frequent).
+
+* Monthly Trends
+
+```{r}
+# Overall
+par(mfrow = c(1, 2))
+hist(Open_Closed$Open_Month, xlab = "Month", main="Frequency of Month in TableE Open Data")
+hist(Open_Closed$Closed_Month, xlab="Year", main = "Frequency of Years in TableE Closed Data")
+
+#open by binsize
+open <- ggplot(Open_Closed, aes(x=Open_Month, y=nrow(Open_Closed))) +        geom_bar(stat='identity', fill = "forest green" ) + ylab("open_count") +
+facet_wrap(~Customer.Size, ncol =2)
+open
+
+#closed by binsize
+closed <- ggplot(Open_Closed, aes(x=Closed_Month, y=nrow(Open_Closed))) +        geom_bar(stat='identity', fill = "forest green" ) + ylab("closed_count") +
+facet_wrap(~Customer.Size, ncol =2)
+closed
+
+```
+
+First bar charts show that most data was opened on January and was closed on February.
+Secone bar charts show open data by Month on each Customer.Size.
+Secone bar charts show closed data by Month on each Customer.Size.
+
+### 5. More on Type C data 
+
+The table below shows number of requested, early,ontime and late data for each Customer Size.
+
+```{r cache=T}
+# sum of requested,early,ontime,late data by its customer size
+sum <- aggregate(cbind(requested = Customer_typeC$Requested, early= Customer_typeC$Early, ontime = Customer_typeC$On.Time, late =Customer_typeC$Late), by=list(Customer.Size=Customer_typeC$Customer.Size), FUN=sum)
+sum
+```
+
+The Tables blow shows number of early, ontime. late data for each Customer Size.
+Customer Size 0,2, and 3 shows downward trend indicating most of their requested data is done early. Customer Size 1 has upward trend indicating most of their requested data is done late.
+
+```{r}
+# exclude requested column 
+library(reshape2)
+eol <- sum[,-2]
+df_melt = melt(eol, id = "Customer.Size")
+ggplot(df_melt, aes(x = variable, y = value, group = Customer.Size)) + 
+geom_line(stat = "identity") + facet_wrap(~Customer.Size, ncol = 1, scales = "free")
+```
+
+
+
+
+

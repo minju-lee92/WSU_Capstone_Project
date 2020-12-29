@@ -1,0 +1,134 @@
+---
+  title: "Additional DB Population"
+output:
+  word_document: default
+---
+
+```{r, echo=FALSE, warning=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+Include libraries
+```{r load_library}
+library(RSQLite)
+```
+
+```{r}
+conn = dbConnect(RSQLite::SQLite(), "../Data/db.sqlite3")
+```
+
+```{r}
+dbSendStatement(conn, "
+  INSERT INTO Table_A_Norm
+    SELECT 
+      CustomerLocation, 
+      [Date],
+      [Type],
+      Year,
+      Month,
+      Day,
+      COUNT(*) AS Occurrences
+    FROM Table_A
+    GROUP BY
+      CustomerLocation, 
+      [Date],
+      [Type]
+;")
+```
+
+```{r}
+dbSendStatement(conn, "
+INSERT INTO Table_B_Norm
+    SELECT 
+      [Customer.Key], 
+      [Date],
+      Requested,
+      Early,
+      Late,
+      [On.Time],
+      Year,
+      Month,
+      Day,
+      COUNT(*) AS Occurrences
+    FROM Table_B
+    GROUP BY
+      [Customer.Key], 
+      [Date],
+      Requested,
+      Early,
+      Late,
+      [On.Time]
+;")
+```
+
+```{r}
+dbSendStatement(conn, "
+INSERT INTO Table_B_Norm
+    SELECT 
+      [Customer.Key], 
+      [Date],
+      Requested,
+      Early,
+      Late,
+      [On.Time],
+      Year,
+      Month,
+      Day,
+      COUNT(*) AS Occurrences
+    FROM Table_B
+    GROUP BY
+      [Customer.Key], 
+      [Date],
+      Requested,
+      Early,
+      Late,
+      [On.Time]
+;")
+```
+
+```{r}
+dbSendStatement(conn, "
+INSERT INTO Table_D_Norm
+    SELECT 
+      Customer, 
+      Date,
+      Type,
+      Year,
+      Month,
+      Day,
+      COUNT(*) AS Occurrences
+    FROM Table_D
+    GROUP BY
+      Customer,
+      Date,
+      Type
+;")
+```
+
+```{r}
+dbSendStatement(conn, "
+INSERT INTO Table_E_Norm
+    SELECT 
+    Company, 
+    Open,
+    Open_Year,
+    Open_Month,
+    Open_Day,
+    Closed,
+    Closed_Year,
+    Closed_Month,
+    Closed_Day,
+    COUNT(*) AS Occurrences
+  FROM Table_E
+  GROUP BY
+    Company, 
+    Open,
+    Closed
+;")
+```
+
+### Close DB connection
+```{r}
+dbDisconnect(conn)
+```

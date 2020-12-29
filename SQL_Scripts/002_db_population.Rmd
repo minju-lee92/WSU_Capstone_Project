@@ -1,0 +1,74 @@
+---
+  title: "SQLite Table Population"
+output:
+  word_document: default
+---
+
+```{r, echo=FALSE, warning=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+Include libraries
+```{r load_library}
+library(RSQLite)
+```
+
+### Load files
+```{r load_in_data}
+customerInfo = read.csv("../Data/customerInfo.csv")
+tableA = read.csv("../Data/tableA.csv")
+tableB = read.csv("../Data/tableB.csv")
+tableD = read.csv("../Data/tableD.csv")
+tableE = read.csv("../Data/tableE.csv")
+```
+
+```{r remove_x}
+customerInfo = customerInfo[ , -which(names(customerInfo) %in% c("X"))]
+tableA = tableA[ , -which(names(tableA) %in% c("X"))]
+tableB = tableB[ , -which(names(tableB) %in% c("X"))]
+tableD = tableD[ , -which(names(tableD) %in% c("X"))]
+tableE = tableE[ , -which(names(tableE) %in% c("X"))]
+```
+
+### Connect and write to DB
+```{r}
+conn = dbConnect(RSQLite::SQLite(), "../Data/db.sqlite3")
+
+# Write the data to the database
+dbWriteTable(conn, "Customer_Info", customerInfo, append=T)
+dbWriteTable(conn, "Table_A", tableA, append=T)
+dbWriteTable(conn, "Table_B", tableB, append=T)
+dbWriteTable(conn, "Table_D", tableD, append=T)
+dbWriteTable(conn, "Table_E", tableE, append=T)
+```
+
+### Check Customer_Info
+```{r}
+dbGetQuery(conn, "SELECT * FROM Customer_Info LIMIT 10")
+```
+
+### Check Table_A
+```{r}
+dbGetQuery(conn, "SELECT * FROM Table_A LIMIT 10")
+```
+
+### Check Table_B
+```{r}
+dbGetQuery(conn, "SELECT * FROM Table_B LIMIT 10")
+```
+
+### Check Table_D
+```{r}
+dbGetQuery(conn, "SELECT * FROM Table_D LIMIT 10")
+```
+
+### Check Table_E
+```{r}
+dbGetQuery(conn, "SELECT * FROM Table_E LIMIT 10")
+```
+
+### Close DB connection
+```{r}
+dbDisconnect(conn)
+```

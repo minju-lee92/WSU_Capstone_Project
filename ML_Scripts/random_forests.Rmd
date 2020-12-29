@@ -1,0 +1,155 @@
+---
+  title: "Novel Classifier and Regressor with Random Forests"
+  output:
+    word_document: default
+  fontsize: 11pt
+  toc: true
+  number_sections: true
+---
+
+```{r, echo=FALSE, warning=FALSE}
+library(knitr)
+library(e1071)
+library(formatR)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+### Include libraries
+```{r}
+suppressMessages(library(dplyr))
+suppressMessages(library(pROC))
+suppressMessages(library(party))
+suppressMessages(library(caret))
+suppressMessages(library(xgboost))
+suppressMessages(library(randomForest))
+suppressMessages(library(miscTools))
+```
+
+### Load data
+```{r load_data}
+setwd("..")
+customerInfo = read.csv("Data/customerInfo.csv")
+tableE = read.csv("Data/tableE.csv")
+```
+
+### Clean data
+```{r}
+set.seed(123) # For reproducibility
+colnames(tableE)[colnames(tableE) == "Company"] = "Customer.ID"
+
+pool = merge(customerInfo, tableE, by="Customer.ID")
+rm(customerInfo, tableE)
+
+pool$Customer.Size = as.factor(pool$Customer.Size)
+pool$Closed_Time = as.integer(as.Date(pool$Closed) - as.Date(pool$Open))
+
+pool = pool %>% select(Customer.Size, Open_Year, Open_Month, Open_Day, Closed_Year, Closed_Month, Closed_Day, Closed_Time)
+
+pool = na.omit(pool)
+n_classes = length(unique(pool$Customer.Size))
+```
+* NOTE: Merging all tables results in an OOM error for tables B and D.
+
+### Split data
+```{r}
+split_index = floor(0.80*nrow(pool))
+
+set.seed(123) # For reproducibility
+train_ind = sample(seq_len(nrow(pool)), size = split_index)
+train = pool[train_ind,]
+test = pool[-train_ind,]
+
+rm(pool)
+```
+
+### Random Forest predicting Customer.Size
+#### Model creation and feature importance
+```{r}
+set.seed(123) # For reproducibility
+rf_model = cforest(Customer.Size ~ ., data = train, control = cforest_unbiased(mtry=2,ntree=50))
+vi_cs = varimp(rf_model) # get variable importance, based on mean decrease in accuracy
+barplot(vi_cs)
+```
+* Higher scores imply more importance in classifying Customer.Size.  Open_Month seems to be the most important while the rest are around the same amount of importance.
+
+#### Get training predictions
+```{r}
+set.seed(123) # For reproducibility
+predicted = predict(rf_model, newdata=train, OOB=TRUE, type="response")
+```
+
+#### ROC Curve
+```{r}
+# ROC curve
+rf_cs_auc = auc(as.numeric(train$Customer.Size), as.numeric(predicted))
+rf_cs_auc
+```
+* AUC for the ROC curve is above.  This implies that the model has that probability that it will be able to distinguish between positive class and negative class.
+
+
+#### In-sample Error
+```{r}
+# Compute in-sample results
+rf_cs_cm = confusionMatrix(predicted, train$Customer.Size)
+rf_cs_cm
+```
+* Accuracy is roughly 84%.
+
+#### Get test predictions
+```{r}
+set.seed(123) # For reproducibility
+predicted_test = predict(rf_model, newdata=test, OOB=TRUE, type="response")
+```
+
+#### In-sample Error
+```{r}
+# Compute in-sample results
+rf_cs_cm = confusionMatrix(data=predicted_test, reference=test$Customer.Size)
+rf_cs_cm
+```
+* Test accuracy is roughly 82%, or about 2% lower than that of the training set.  There likely isn't much room for improvement through hyperparameter tuning.
+
+### Random Forest predicting Closed Time
+#### Model creation and feature importance
+```{r}
+set.seed(123) # For reproducibility
+
+train = train %>% select(Customer.Size, Open_Year, Open_Month, Open_Day, Closed_Time)
+test = test %>% select(Customer.Size, Open_Year, Open_Month, Open_Day, Closed_Time)
+
+rf_model_ct <- randomForest(Closed_Time ~ ., data = train, mtry=3,
+                         importance=TRUE, na.action=na.omit)
+print(rf_model_ct)
+```
+
+### Feature Importance
+```{r}
+varImpPlot(rf_model_ct, type=2)
+```
+* Importance scores (higher is better).
+
+#### Train Metrics
+```{r}
+set.seed(123) # For reproducibility
+rf_ct_train_predictions = predict(rf_model_ct, train)
+(r2 = rSquared(train$Closed_Time, train$Closed_Time - rf_ct_train_predictions))
+(mse = mean((train$Closed_Time - rf_ct_train_predictions)^2))
+(rmse = sqrt(mse))
+```
+* Above training performance metrics are above.  With a root mean squared error of about 60 days, this may be acceptable for predicting close dates depending on the application.
+
+#### Test Metrics
+```{r}
+set.seed(123) # For reproducibility
+rf_ct_test_predictions = predict(rf_model_ct, test)
+(mse = mean((test$Closed_Time - rf_ct_test_predictions)^2))
+(rmse = sqrt(mse))
+```
+* Testing performance metrics are above.  This shows that the model might be tuned for better generalization as the train and test performance has a small gap.  RMSE for the test set is about 90 days higher than that of the training set.
+
+### Conclusions
+It appears that this novel application of random forests shows that some of the data can be well generalized by machine and statistical learning models, but are these applications particularly useful?  One feature was engineered, Closed_Time.  This was an elapsed days amount of time between open and closed and it seems that predicting it can be done to 60/90 days RMSE (train/test).
+
+Future work can examine other feature from tables A, B, and D which when joined, cause memory problems on low memory machines.  Since we are limited to R, we likely have three paths to work around this memory issue.  We could subset from the database, divide data and train different models eventually joining the models, or we can compress the data in the data and then pull, which likely isn't going to help all that much.  Yet, the features from other variables might be improve model performance.
+
+Otherwise, we can also explore other models and algorithms but there may be tradeoffs between interpretability and performance.  We can also explore other features such as lag variables which can inform algorithms of a customer's past transactions.

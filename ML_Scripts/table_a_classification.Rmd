@@ -1,0 +1,195 @@
+---
+  title: "Classifiers on Table A Classes"
+output:
+  word_document: default
+---
+
+```{r, echo=FALSE, warning=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+### Include libraries
+```{r, echo=FALSE, warning=FALSE}
+library(knitr)
+library(e1071)
+library(formatR)
+library(dplyr)
+library(tidyr)
+library(ggplot2)    # plots
+library(tidyverse)  # data manipulation
+library(RSQLite)
+suppressMessages(library(dplyr))
+suppressMessages(library(pROC))
+suppressMessages(library(party))
+suppressMessages(library(caret))
+suppressMessages(library(xgboost))
+suppressMessages(library(randomForest))
+suppressMessages(library(miscTools))
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+### Connect to DB
+```{r}
+conn = dbConnect(RSQLite::SQLite(), "../Data/db.sqlite3")
+```
+
+### DB Query Functions
+```{r}
+a_full <- function() {
+  library(RSQLite)
+  conn = dbConnect(RSQLite::SQLite(), "../Data/db.sqlite3")
+  x = dbGetQuery(conn, "
+    SELECT 
+      *
+    FROM (
+      SELECT [Customer.ID], [Customer.Size]
+      FROM Customer_Info
+    ) AS CI
+    JOIN (
+      SELECT 
+        CustomerLocation, 
+        [Date] AS [A.Date],
+        [Type] AS [A.Type],
+        Year AS [A.Year],
+        Month AS [A.Month],
+        Day AS [A.Day],
+        Occurrences AS [A.Occurrences]
+      FROM Table_A_Norm
+    ) AS A ON CI.[Customer.ID]=A.CustomerLocation
+    JOIN (
+      SELECT 
+        [Customer.Key], 
+        MIN(Requested) AS [B.Min.Requested],
+        AVG(Requested) AS [B.Avg.Requested],
+        MAX(Requested) AS [B.Max.Requested],
+        COUNT(Requested) AS [B.Count.Requested],
+        MIN(Early) AS [B.Min.Early],
+        AVG(Early) AS [B.Avg.Early],
+        MAX(Early) AS [B.Max.Early],
+        COUNT(Early) AS [B.Count.Early],
+        MIN(Late) AS [B.Min.Late],
+        AVG(Late) AS [B.Avg.Late],
+        MAX(Late) AS [B.Max.Late],
+        COUNT(Late) AS [B.Count.Late],
+        MIN([On.Time]) AS [B.Min.On.Time],
+        AVG([On.Time]) AS [B.Avg.On.Time],
+        MAX([On.Time]) AS [B.Max.On.Time],
+        COUNT([On.Time]) AS [B.Count.On.Time],
+        MIN(Occurrences) AS [B.Min.Occurrences],
+        AVG(Occurrences) AS [B.Avg.Occurrences],
+        MAX(Occurrences) AS [B.Max.Occurrences],
+        COUNT(Occurrences) AS [B.Count.Occurrences]
+      FROM Table_B_Norm
+      GROUP BY
+        [Customer.Key]
+    ) AS B ON A.CustomerLocation=B.[Customer.Key]
+    JOIN (
+      SELECT 
+        Customer, 
+        MIN(Type) AS [D.Min.Type],
+        AVG(Type) AS [D.Avg.Type],
+        MAX(Type) AS [D.Max.Type],
+        Count(Type) AS [D.Count.Type],
+        MIN(Occurrences) AS [D.Min.Occurrences],
+        AVG(Occurrences) AS [D.Avg.Occurrences],
+        MAX(Occurrences) AS [D.Max.Occurrences],
+        COUNT(Occurrences) AS [D.Count.Occurrences]
+      FROM Table_D_Norm
+      GROUP BY
+        Customer
+    ) AS D ON B.[Customer.Key]=D.Customer
+    JOIN (
+      SELECT 
+        Company,
+        MIN(Occurrences) AS [E.Min.Occurrences],
+        AVG(Occurrences) AS [E.Avg.Occurrences],
+        MAX(Occurrences) AS [E.Max.Occurrences],
+        COUNT(Occurrences) AS [E.Count.Occurrences]
+      FROM Table_E_Norm
+      GROUP BY
+        Company
+    ) AS E ON D.Customer=E.Company
+    ORDER BY A.[A.Date] ASC
+  ;")
+  dbDisconnect(conn)
+  drops = c("Customer.ID","CustomerLocation","Customer.Key","Customer","Company","A.Date")
+  x = x[, !(names(x) %in% drops)]
+  rm(drops)
+  
+  x$Customer.Size = as.factor(x$Customer.Size)
+  x$A.Type = as.factor(x$A.Type)
+  
+  return(x)
+}
+
+a_train <- function() {
+  x = a_full()
+  index = floor(0.80*nrow(x))
+  x = x[1:index,]
+  return(x)
+}
+
+a_test <- function() {
+  x = a_full()
+  index = floor(0.80*nrow(x))
+  x = x[(index+1):nrow(x),]
+  return(x)
+}
+```
+
+### Split data
+```{r}
+train = a_train()
+test = a_test()
+n_classes = length(unique(a_full()$A.Type))
+```
+
+### Random Forest predicting Customer.Size
+#### Model creation and feature importance
+```{r}
+set.seed(123) # For reproducibility
+rf_model = cforest(A.Type ~ ., data = train, control = cforest_unbiased(mtry=2,ntree=50))
+```
+
+#### Get training predictions
+```{r}
+set.seed(123) # For reproducibility
+predicted = predict(rf_model, newdata=train, OOB=TRUE, type="response")
+```
+
+#### ROC Curve
+```{r}
+# ROC curve
+rf_cs_auc = auc(as.numeric(train$A.Type), as.numeric(predicted))
+rf_cs_auc
+```
+* AUC for the ROC curve is above.  This implies that the model has that probability that it will be able to distinguish between positive class and negative class.
+
+
+#### In-sample Error
+```{r}
+# Compute in-sample results
+rf_cs_cm = confusionMatrix(predicted, train$A.Type)
+rf_cs_cm
+```
+* Accuracy is near 99.56%.  This is good except for the fact that it gets Type 1 entirely incorrect.  The dataset is largely disproporionate with 37 type 1's and 8424 type 0's.
+
+#### Get test predictions
+```{r}
+set.seed(123) # For reproducibility
+predicted_test = predict(rf_model, newdata=test, OOB=TRUE, type="response")
+```
+
+#### In-sample Error
+```{r}
+# Compute in-sample results
+rf_cs_cm = confusionMatrix(data=predicted_test, reference=test$A.Type)
+rf_cs_cm
+```
+* The test set reveals the same thing as the test set.  The model predicts type 0 very well and completely misclassifies type 1 as type 0.
+
+### Close DB connection
+```{r}
+dbDisconnect(conn)
+```
